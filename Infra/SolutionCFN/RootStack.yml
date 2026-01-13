@@ -84,9 +84,9 @@ Resources:
     Type: "AWS::CloudFormation::Stack"
     Properties:
       TemplateURL: !Sub
-        - "https://${AWS::AccountId}-${Bucket}.s3.${Region}ucketNameSuffix.amazonaws.com/DataStack.yml"
-        - Bucket: !Ref TemplateBucketNameSuffix
-          Region: !Ref TemplateBucketRegion
+        - "https://s3.${Region}.amazonaws.com/${TemplateBucket}/DataStack.yml"
+        - Region: !Ref TemplateBucketRegion
+          TemplateBucket: !Sub "${AWS::AccountId}-${TemplateBucketNameSuffix}"
       Parameters:
         BooksBucketNameSuffix: !Ref BooksBucketNameSuffix
         UserTableName: !Ref UserTableName
@@ -100,9 +100,9 @@ Resources:
     DependsOn: DataStack
     Properties:
       TemplateURL: !Sub
-        - "https://${AWS::AccountId}-${Bucket}.s3.${Region}ucketNameSuffix.amazonaws.com/AuthStack.yml"
-        - Bucket: !Ref TemplateBucketNameSuffix
-          Region: !Ref TemplateBucketRegion
+        - "https://s3.${Region}.amazonaws.com/${TemplateBucket}/AuthStack.yml"
+        - Region: !Ref TemplateBucketRegion
+          TemplateBucket: !Sub "${AWS::AccountId}-${TemplateBucketNameSuffix}"
       Parameters:
         CognitoDomainPrefix: !Ref CognitoDomainPrefix
         UserPoolName: !Ref UserPoolName
@@ -124,14 +124,13 @@ Resources:
       - AuthStack
     Properties:
       TemplateURL: !Sub
-        - "https://${AWS::AccountId}-${Bucket}.s3.${Region}ucketNameSuffix.amazonaws.com/ApiStack.yml"
-        - Bucket: !Ref TemplateBucketNameSuffix
-          Region: !Ref TemplateBucketRegion
+        - "https://s3.${Region}.amazonaws.com/${TemplateBucket}/ApiStack.yml"
+        - Region: !Ref TemplateBucketRegion
+          TemplateBucket: !Sub "${AWS::AccountId}-${TemplateBucketNameSuffix}"
       Parameters:
         UserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
         UserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
         UserPoolIssuerUrl: !GetAtt AuthStack.Outputs.UserPoolIssuerUrl
-
         BooksBucketName: !GetAtt DataStack.Outputs.BooksBucketName
         BooksTableName: !GetAtt DataStack.Outputs.BooksTableName
         UserProfilesTableName: !GetAtt DataStack.Outputs.UserProfilesTableName
