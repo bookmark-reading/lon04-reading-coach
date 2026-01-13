@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "API stack (nested, SAM): HTTP API + Cognito JWT auth + Python Lambdas"
+
+Parameters:
+  # Passed from RootStack (AuthStack outputs)
+  UserPoolId:
+    Type: String
+    Description: "Cognito User Pool ID"
+  UserPoolClientId:
+    Type: String
+    Description: "Cognito app client id (JWT audience)"
+  UserPoolIssuerUrl:
+    Type: String
+    Description: "Cognito issuer URL (JWT issuer)"
+
+  # Passed from RootStack (DataStack outputs)
+  BooksBucketName:
+    Type: String
+    Description: "S3 bucket storing PDF books"
+  BooksTableName:
+    Type: String
+    Description: "DynamoDB Books table"
+  UserProfilesTableName:
+    Type: String
+    Description: "DynamoDB UserProfiles table"
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 256
+
+Resources:
+  #########################################################
+  # HTTP API
+  #
+  # Why HTTP API:
+  # - cheaper + simpler than REST API for JWT-protected JSON endpoints
+  # - native Cognito JWT authoriser wiring
+  #########################################################
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: "$default" # auto-deployed default stage
+
+      # MVP CORS for local UI; tighten to your real domain later
+      CorsConfiguration:
+        AllowOrigins:
+          - "http://localhost:3000"
+        AllowMethods:
+          - GET
+          - PUT
+          - OPTIONS
+        AllowHeaders:
+          - authorization
+          - content-type
+
+      # Default auth = Cognito JWT for all routes in this API
+      Auth:
+        Authorizers:
+          CognitoJwt:
+            JwtConfiguration:
+              issuer: !Ref UserPoolIssuerUrl
+              audience:
+                - !Ref UserPoolClientId
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: CognitoJwt
+
+  #########################################################
+  # /profile (GET, PUT)
+  #
+  # Stores user profile attributes in DynamoDB:
+  # - firstName, lastName, grade
+  # The userId is derived from JWT claim "sub".
+  #########################################################
+
+  ProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bookmark-reading-profile-${AWS::StackName}"
+      Handler: profile.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          USER_TABLE: !Ref UserProfilesTableName
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        # Minimal permissions for profile CRUD (single-item ops)
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${UserProfilesTableName}"
+      Events:
+        GetProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /profile
+            Method: GET
+        PutProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /profile
+            Method: PUT
+
+  #########################################################
+  # /books (GET)
+  #
+  # Reads the user's grade from UserProfiles, then queries Books
+  # via the GradeIndex GSI (grade partition key).
+  #########################################################
+
+  ListBooksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bookmark-reading-books-list-${AWS::StackName}"
+      Handler: list_books.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          USER_TABLE: !Ref UserProfilesTableName
+          BOOKS_TABLE: !Ref BooksTableName
+          BOOKS_GSI: "GradeIndex"
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        # Read user profile (to get grade)
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${UserProfilesTableName}"
+            # Query books by grade on the GSI
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+              Resource:
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}/index/*"
+      Events:
+        GetBooks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /books
+            Method: GET
+
+  #########################################################
+  # /books/{bookId}/url (GET)
+  #
+  # Looks up book metadata to get s3Key, then returns a presigned
+  # URL valid for 1 hour (3600s).
+  #########################################################
+
+  GetBookUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "bookmark-reading-book-url-${AWS::StackName}"
+      Handler: get_book_url.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          BOOKS_BUCKET: !Ref BooksBucketName
+          BOOKS_TABLE: !Ref BooksTableName
+          URL_TTL_SECONDS: "3600" # 1 hour
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        # Read book metadata + allow GetObject for presigned URL
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}"
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${BooksBucketName}/*"
+      Events:
+        GetUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /books/{bookId}/url
+            Method: GET
+
+Outputs:
+  ApiBaseUrl:
+    # Standard execute-api base for HttpApi + default stage
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Description: "Base URL for the HTTP API"

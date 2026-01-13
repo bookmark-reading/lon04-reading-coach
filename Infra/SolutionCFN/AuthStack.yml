@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Auth stack: Cognito User Pool + App Client + Hosted UI domain"
+
+Parameters:
+  CognitoDomainPrefix:
+    Type: String
+    Default: "bookmark-reading-bb"
+    Description: "Cognito hosted UI domain prefix (must be unique per region)"
+
+  UserPoolName:
+    Type: String
+    Default: "BookmarkReadingUserPool"
+    Description: "Cognito User Pool name"
+
+Resources:
+
+  #########################################################
+  # USER POOL
+  #########################################################
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+
+      # Email-based sign-in keeps MVP simple
+      UsernameAttributes:
+        - email
+
+      # Auto-verify email for basic account integrity
+      AutoVerifiedAttributes:
+        - email
+
+      # Minimal user attributes for MVP (optional names)
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+        - Name: given_name
+          Required: false
+          Mutable: true
+        - Name: family_name
+          Required: false
+          Mutable: true
+
+      # Basic password policy for MVP
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+      # Account recovery via email only
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+  #########################################################
+  # APP CLIENT
+  #########################################################
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: "bookmark-reading-app"
+      UserPoolId: !Ref UserPool
+
+      # No client secret for browser/mobile apps
+      GenerateSecret: false
+
+      # Standard auth flows for MVP
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+      # Hosted UI OAuth settings (MVP-safe defaults)
+      SupportedIdentityProviders:
+        - COGNITO
+
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+
+      # Placeholder URLs – update when UI URL is known
+      CallbackURLs:
+        - "http://localhost:3000/callback"
+      LogoutURLs:
+        - "http://localhost:3000/logout"
+
+  #########################################################
+  # HOSTED UI DOMAIN
+  #########################################################
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+    Description: "Cognito User Pool ID"
+
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Description: "Cognito App Client ID"
+
+  # Used by API Gateway JWT authorizer (issuer)
+  UserPoolIssuerUrl:
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+    Description: "Issuer URL for JWT validation"
+
+  HostedUiBaseUrl:
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+    Description: "Cognito Hosted UI base URL"

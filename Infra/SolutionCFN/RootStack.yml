@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Root stack (MVP): Cognito login + DynamoDB profiles + DynamoDB books + S3 PDFs"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Template storage
+        Parameters:
+          - TemplateBucketNameSuffix
+          - TemplateBucketRegion
+
+      - Label:
+          default: Books S3
+        Parameters:
+          - BooksBucketNameSuffix
+
+      - Label:
+          default: DynamoDB
+        Parameters:
+          - UserTableName
+          - BookTableName
+
+      - Label:
+          default: Cognito
+        Parameters:
+          - CognitoDomainPrefix
+          - UserPoolName
+
+Parameters:
+  #########################################################
+  # Template storage (nested stacks)
+  #########################################################
+  TemplateBucketNameSuffix:
+    Type: String
+    Default: "bookmark-reading-bb-cfn-s3"
+    Description: "S3 bucket holding nested CloudFormation templates"
+
+  TemplateBucketRegion:
+    Type: String
+    Default: "us-west-2"
+    Description: "Region for template bucket"
+
+  #########################################################
+  # Books S3 (runtime data)
+  #########################################################
+  BooksBucketNameSuffix:
+    Type: String
+    Default: "bookmark-reading-bb-books-s3"
+    Description: "S3 bucket name suffix for storing PDF books - will use [acctID]-[suffix] format"
+
+  #########################################################
+  # Cognito
+  #########################################################
+  CognitoDomainPrefix:
+    Type: String
+    Default: "bookmark-reading-bb"
+    Description: "Cognito hosted UI domain prefix"
+
+  UserPoolName:
+    Type: String
+    Default: "BookmarkReadingUserPool"
+    Description: "Cognito User Pool name"
+
+  #########################################################
+  # DynamoDB
+  #########################################################
+  UserTableName:
+    Type: String
+    Default: "UserProfiles"
+    Description: "User Profiles DynamoDB table name"
+
+  BookTableName:
+    Type: String
+    Default: "Books"
+    Description: "Books DynamoDB table name"
+
+Resources:
+
+  #########################################################
+  # 1) DATA STACK
+  #########################################################
+  DataStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub
+        - "https://${AWS::AccountId}-${Bucket}.s3.${Region}ucketNameSuffix.amazonaws.com/DataStack.yml"
+        - Bucket: !Ref TemplateBucketNameSuffix
+          Region: !Ref TemplateBucketRegion
+      Parameters:
+        BooksBucketNameSuffix: !Ref BooksBucketNameSuffix
+        UserTableName: !Ref UserTableName
+        BookTableName: !Ref BookTableName
+
+  #########################################################
+  # 2) AUTH STACK
+  #########################################################
+  AuthStack:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn: DataStack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${AWS::AccountId}-${Bucket}.s3.${Region}ucketNameSuffix.amazonaws.com/AuthStack.yml"
+        - Bucket: !Ref TemplateBucketNameSuffix
+          Region: !Ref TemplateBucketRegion
+      Parameters:
+        CognitoDomainPrefix: !Ref CognitoDomainPrefix
+        UserPoolName: !Ref UserPoolName
+
+  #########################################################
+  # CORE_ENGINE (placeholder)
+  #
+  # Future:
+  #   CoreEngineStack.yml
+  #########################################################
+
+  #########################################################
+  # 3) API STACK
+  #########################################################
+  ApiStack:
+    Type: "AWS::CloudFormation::Stack"
+    DependsOn:
+      - DataStack
+      - AuthStack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${AWS::AccountId}-${Bucket}.s3.${Region}ucketNameSuffix.amazonaws.com/ApiStack.yml"
+        - Bucket: !Ref TemplateBucketNameSuffix
+          Region: !Ref TemplateBucketRegion
+      Parameters:
+        UserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
+        UserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
+        UserPoolIssuerUrl: !GetAtt AuthStack.Outputs.UserPoolIssuerUrl
+
+        BooksBucketName: !GetAtt DataStack.Outputs.BooksBucketName
+        BooksTableName: !GetAtt DataStack.Outputs.BooksTableName
+        UserProfilesTableName: !GetAtt DataStack.Outputs.UserProfilesTableName
+
+Outputs:
+  BooksBucketName:
+    Value: !GetAtt DataStack.Outputs.BooksBucketName
+
+  UserProfilesTableName:
+    Value: !GetAtt DataStack.Outputs.UserProfilesTableName
+
+  BooksTableName:
+    Value: !GetAtt DataStack.Outputs.BooksTableName
+
+  UserPoolId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolId
+
+  UserPoolClientId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolClientId
+
+  ApiBaseUrl:
+    Value: !GetAtt ApiStack.Outputs.ApiBaseUrl
