@@ -15,6 +15,7 @@ from .messages import (
     ErrorOutMessage,
     NoticeMessage,
     OutboundMessage,
+    TextMessage,
 )
 from .reading_session import ReadingSession, SessionStatus
 from .user_profile import ReadingLevel, UserProfile
@@ -55,6 +56,7 @@ __all__ = [
     # Message entities
     "OutboundMessage",
     "AudioOutMessage",
+    "TextMessage",
     "NoticeMessage",
     "ErrorOutMessage",
     # WebSocket message entities

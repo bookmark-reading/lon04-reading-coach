@@ -14,6 +14,7 @@ from ..domain.entities.messages import (
     PageChangeMessage,
     ErrorOutMessage,
     NoticeMessage,
+    TextMessage,
     FeedbackMessage,
     SessionEndedMessage
 )
@@ -82,6 +83,16 @@ class WebSocketHandler:
                     # Send audio feedback as binary WebSocket frame
                     await websocket.send_bytes(item.pcm_bytes)
                 
+                case TextMessage():
+                    # Send text message as JSON
+                    data = {
+                        "type": "text",
+                        "text": item.text,
+                        "timestamp": item.timestamp
+                    }
+                    logger.info(f"_send_loop sending text message: {item.text}")
+                    await websocket.send_text(json.dumps(data))
+                
                 case PageChangeMessage():
                     # Send page change instruction as JSON
                     await websocket.send_text(item.page_change.model_dump_json())
@@ -126,16 +137,16 @@ class WebSocketHandler:
         while True:
             logger.debug("_receive_loop waiting for message...")
             data = await websocket.receive()
-            logger.info(f"_receive_loop received: type={data.get('type')}, keys={list(data.keys())}")
+            logger.debug(f"_receive_loop received: type={data.get('type')}, keys={list(data.keys())}")
             
             # Handle binary messages (audio)
             if data.get("type") == "websocket.receive" and "bytes" in data:
                 # Audio data - ingest it
                 pcm_bytes = data["bytes"]
-                logger.info(f"_receive_loop: Got audio data, {len(pcm_bytes)} bytes")
+                logger.debug(f"_receive_loop: Got audio data, {len(pcm_bytes)} bytes")
                 timestamp = asyncio.get_event_loop().time()
                 await self._reading_service.ingest_audio(pcm_bytes, timestamp)
-                logger.info("_receive_loop: Audio ingested successfully")
+                logger.debug("_receive_loop: Audio ingested successfully")
             
             # Handle text messages (JSON control messages)
             elif data.get("type") == "websocket.receive" and "text" in data:

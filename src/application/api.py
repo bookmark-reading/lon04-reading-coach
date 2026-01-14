@@ -12,6 +12,11 @@ from ..infrastructure.local_book_provider import LocalBookProvider
 from ..infrastructure.local_session_repository import LocalSessionRepository
 from ..infrastructure.local_user_profile_provider import LocalUserProfileProvider
 from ..domain.agents.simple_reading_agent import SimpleReadingAgent
+from ..infrastructure.nova_sonic_reading_agent import (
+    NovaSonicReadingAgent,
+    NovaSonicConfig,
+    NOVA_SDK_AVAILABLE,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -31,7 +36,28 @@ app = FastAPI(
 book_provider = LocalBookProvider()
 user_profile_provider = LocalUserProfileProvider()
 session_repository = LocalSessionRepository()
-reading_agent = SimpleReadingAgent()
+
+# Initialize reading agent based on configuration
+if settings.reading_agent_type == "nova_sonic" and NOVA_SDK_AVAILABLE:
+    nova_config = NovaSonicConfig(
+        region=settings.aws_region,
+        model_id=settings.nova_model_id,
+        max_tokens=settings.nova_max_tokens,
+        temperature=settings.nova_temperature,
+        top_p=settings.nova_top_p,
+        sample_rate_hz=settings.nova_sample_rate_hz,
+        channels=settings.nova_channels,
+        aws_access_key_id=settings.aws_access_key_id,
+        aws_secret_access_key=settings.aws_secret_access_key,
+        aws_session_token=settings.aws_session_token,
+    )
+    reading_agent = NovaSonicReadingAgent(config=nova_config)
+    logger.info("Using Nova Sonic reading agent")
+else:
+    if settings.reading_agent_type == "nova_sonic" and not NOVA_SDK_AVAILABLE:
+        logger.warning("Nova Sonic SDK not available, falling back to SimpleReadingAgent")
+    reading_agent = SimpleReadingAgent()
+    logger.info("Using Simple reading agent")
 
 # Initialize controller with injected dependencies
 controller = ReadingCoachController(

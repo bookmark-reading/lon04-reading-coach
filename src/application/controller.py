@@ -121,7 +121,7 @@ class ReadingCoachController:
                 await asyncio.sleep(self.persist_interval)
                 session = reading_service.session
                 await self.session_repository.update(session)
-                logger.debug(f"Session {session.session_id} auto-saved")
+                logger.debug(f"Session {session.id} auto-saved")
             except asyncio.CancelledError:
                 logger.debug("Session persistence task cancelled")
                 break

@@ -63,10 +63,6 @@ class ReadingService:
         self.inbound_queue: asyncio.Queue[InboundEvent] = asyncio.Queue()
         self.outbound_queue: asyncio.Queue[OutboundMessage] = asyncio.Queue()
         
-        # Audio buffering
-        self.audio_buffer: list[AudioFrame] = []
-        self.audio_frame_size: int = 1024  # Configurable frame size
-        
         # Event tracking (for page changes and feedback)
         self.pending_events: dict[str, PageChange] = {}
         self.last_events: list = []
@@ -215,37 +211,37 @@ class ReadingService:
         """Handle incoming audio data."""
         # Create audio frame
         frame = AudioFrame(event.pcm_bytes, event.timestamp)
-        self.audio_buffer.append(frame)
         
         # Log audio receipt for verification
-        logger.debug(
+        logger.info(
             f"Session {self.session.id}: Received audio chunk "
-            f"({len(event.pcm_bytes)} bytes, buffer size: {len(self.audio_buffer)} frames)"
+            f"({len(event.pcm_bytes)} bytes), calling _process_audio_frame"
         )
         
-        # Process audio if buffer is large enough
-        if len(self.audio_buffer) >= 10:  # Example threshold
-            await self._process_audio_buffer()
+        # Process audio frame immediately (no buffering with Nova 2)
+        await self._process_audio_frame(frame)
     
-    async def _process_audio_buffer(self):
+    async def _process_audio_frame(self, frame: AudioFrame):
         """
-        Process buffered audio data.
+        Process audio frame immediately.
         
         The reading agent analyzes the audio and decides on appropriate responses,
         including page changes. The agent has full control over which page to navigate to
         (next, previous, or jump to any specific page number).
         """
-        # Keep buffer manageable (last 50 frames)
-        if len(self.audio_buffer) > 50:
-            self.audio_buffer = self.audio_buffer[-50:]
-        
-        # Get agent decision on what to do with the audio
+        logger.info(f"_process_audio_frame: Calling agent.coach() for session {self.session.id}")
+        # Get agent decision on what to do with the audio frame
         # Agent can return: PageChangeMessage, FeedbackMessage, AudioOutMessage, NoticeMessage, etc.
         agent_response = await self.reading_agent.coach(
             session=self.session,
             book=self.book,
-            audio=self.audio_buffer
+            audio_frame=frame
         )
+        logger.info(f"_process_audio_frame: Got response from agent: {type(agent_response).__name__}")
+        
+        # If agent returned None, it means no response is ready yet - just continue
+        if agent_response is None:
+            return
         
         # If agent decided to change pages, update session state
         if isinstance(agent_response, PageChangeMessage):
@@ -479,7 +475,6 @@ class ReadingService:
             "current_page": self.session.current_page,
             "status": self.session.status.value if hasattr(self.session.status, 'value') else str(self.session.status),
             "sample_rate": self.session.sample_rate,
-            "audio_buffer_size": len(self.audio_buffer),
             "pending_events": len(self.pending_events),
             "last_activity": self.session.last_activity_at.isoformat() if self.session.last_activity_at else None,
         }

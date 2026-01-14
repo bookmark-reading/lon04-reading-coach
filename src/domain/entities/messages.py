@@ -25,6 +25,15 @@ class AudioOutMessage(OutboundMessage):
     """Message containing audio output."""
     
     pcm_bytes: bytes
+    text: str = ""
+    timestamp: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+
+
+@dataclass
+class TextMessage(OutboundMessage):
+    """Message containing text output."""
+    
+    text: str
     timestamp: float = field(default_factory=lambda: datetime.utcnow().timestamp())
 
 

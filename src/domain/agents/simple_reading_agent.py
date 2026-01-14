@@ -2,7 +2,6 @@
 
 import logging
 import random
-from typing import List
 
 from ..entities import OutboundMessage, ReadingSession, Book, AudioFrame
 from ..entities.messages import NoticeMessage, PageChangeMessage, FeedbackMessage
@@ -28,25 +27,25 @@ class SimpleReadingAgent:
         self,
         session: ReadingSession,
         book: Book,
-        audio: List[AudioFrame]
+        audio_frame: AudioFrame
     ) -> OutboundMessage:
         """
-        Process audio and return a simple response.
+        Process audio frame and return a simple response.
         
         This stub implementation:
-        - Counts audio chunks
-        - Randomly decides to turn pages after accumulating enough audio
+        - Counts audio frames
+        - Randomly decides to turn pages after accumulating enough frames
         - Provides simple feedback messages
         
         Args:
             session: The current reading session
             book: The book being read
-            audio: Audio frames to process
+            audio_frame: Single audio frame to process
             
         Returns:
             Either a notice, feedback, or page turn message
         """
-        logger.debug(f"SimpleReadingAgent processing {len(audio)} audio frames")
+        logger.debug(f"SimpleReadingAgent processing audio frame")
         
         self._audio_count += 1
         

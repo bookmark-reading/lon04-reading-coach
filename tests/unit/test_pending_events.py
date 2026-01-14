@@ -32,17 +32,25 @@ def test_session():
 @pytest.fixture
 def test_book():
     """Create a test book."""
+    from src.domain.entities.book import BookPage
+    
     metadata = BookMetadata(
         book_id="test-book-456",
+        title="Test Book",
+        author="Test Author",
+        difficulty_level="beginner",
+        total_pages=50,
+        # Legacy fields
         book_name="Test Book",
         reading_level=3,
-        total_pages=50,
         path="/test/path"
     )
     return Book(
-        book_id="test-book-456",
-        file_content=b"test content",
-        metadata=metadata
+        metadata=metadata,
+        pages=[
+            BookPage(page_number=i, text=f"Page {i} content", image_url=None)
+            for i in range(1, 51)
+        ]
     )
 
 

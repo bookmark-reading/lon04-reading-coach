@@ -27,9 +27,12 @@ class LocalBookProvider(BookProvider):
         # Pre-populate with test book for e2e testing
         self._metadata["bathtub-safari"] = BookMetadata(
             book_id="bathtub-safari",
+            title="Bathtub Safari",
+            author="Unknown",
+            difficulty_level="beginner",
+            total_pages=16,
             book_name="Bathtub Safari",
             reading_level=2,
-            total_pages=16,
             path="resources/books/bathtub-safari_en.pdf"
         )
     
