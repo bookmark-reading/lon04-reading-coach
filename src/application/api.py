@@ -10,7 +10,7 @@ from jose import JWTError
 
 from .config import settings
 from .controller import ReadingCoachController
-from ..infrastructure.local_book_provider import LocalBookProvider
+from ..infrastructure.aws_book_provider import AWSBookProvider
 from ..infrastructure.local_session_repository import LocalSessionRepository
 from ..infrastructure.local_user_profile_provider import LocalUserProfileProvider
 from ..domain.agents.simple_reading_agent import SimpleReadingAgent
@@ -21,6 +21,17 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Try to import Nova Sonic agent
+try:
+    from ..infrastructure.nova_sonic_reading_agent import (
+        NovaSonicReadingAgent,
+        NovaSonicConfig,
+    )
+    NOVA_SDK_AVAILABLE = True
+except ImportError:
+    NOVA_SDK_AVAILABLE = False
+    logger.warning("Nova Sonic SDK not available")
 
 # Create FastAPI app instance
 app = FastAPI(
@@ -38,11 +49,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize providers (in production, these would be configured based on environment)
-book_provider = LocalBookProvider()
+# Initialize providers
+book_provider = AWSBookProvider(
+    table_name=settings.books_table_name,
+    bucket_name=settings.books_bucket_name,
+    region_name=settings.aws_region
+)
 user_profile_provider = LocalUserProfileProvider()
 session_repository = LocalSessionRepository()
-reading_agent = SimpleReadingAgent()
+
+# Initialize reading agent based on configuration
+if settings.reading_agent_type == "nova_sonic" and NOVA_SDK_AVAILABLE:
+    nova_config = NovaSonicConfig(
+        region=settings.aws_region,
+        model_id=settings.nova_model_id,
+        max_tokens=settings.nova_max_tokens,
+        temperature=settings.nova_temperature,
+        top_p=settings.nova_top_p,
+        sample_rate_hz=settings.nova_sample_rate_hz,
+        channels=settings.nova_channels,
+        aws_access_key_id=settings.aws_access_key_id,
+        aws_secret_access_key=settings.aws_secret_access_key,
+        aws_session_token=settings.aws_session_token,
+    )
+    reading_agent = NovaSonicReadingAgent(config=nova_config)
+    logger.info("✅ Using Nova Sonic reading agent")
+else:
+    if settings.reading_agent_type == "nova_sonic":
+        logger.warning("⚠️ Nova Sonic requested but SDK not available, using SimpleReadingAgent")
+    reading_agent = SimpleReadingAgent()
+    logger.info("✅ Using Simple reading agent")
 
 # Initialize controller with injected dependencies
 controller = ReadingCoachController(
@@ -60,11 +96,11 @@ async def health_check():
 
 
 @app.get("/books")
-async def get_books(user_id: str = Query(..., description="User ID to get books for")):
+async def get_books(user_id: str = Query("12345678-1234-5678-1234-567812345678", description="User ID to get books for")):
     """Get books suitable for a user based on their reading age.
     
     Args:
-        user_id: The UUID of the user.
+        user_id: The UUID of the user. Defaults to test user if not provided.
         
     Returns:
         List of books suitable for the user's reading age.
