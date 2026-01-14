@@ -26,6 +26,7 @@ class AudioOutMessage(OutboundMessage):
     
     pcm_bytes: bytes
     timestamp: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+    text: Optional[str] = None  # Text prompt for Nova Sonic TTS
 
 
 @dataclass

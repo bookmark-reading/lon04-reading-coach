@@ -18,7 +18,7 @@ class BookMetadata(BaseModel):
     reading_level: int = Field(ge=1, le=7, description="Recommended reading level (1-7)")
     total_pages: int = Field(ge=1, description="Total number of pages in the book")
     path: str = Field(min_length=1, description="Path or key to the book file (local path or S3 key)")
-    content: Optional[bytes] = Field(default=None, description="The actual book file content")
+    content: Optional[str] = Field(default=None, description="Path to JSON content file")
 
 
 class Book(BaseModel):

@@ -80,8 +80,18 @@ class WebSocketHandler:
                     logger.info("_send_loop sent session.ready successfully")
                 
                 case AudioOutMessage():
-                    # Send audio feedback as binary WebSocket frame
-                    await websocket.send_bytes(item.pcm_bytes)
+                    # Send audio feedback as binary or JSON with text for Nova Sonic
+                    if item.text:
+                        # Send as JSON with text for Nova Sonic TTS
+                        data = {
+                            "type": "audio_out",
+                            "text": item.text,
+                            "timestamp": item.timestamp
+                        }
+                        await websocket.send_text(json.dumps(data))
+                    else:
+                        # Send audio as binary WebSocket frame
+                        await websocket.send_bytes(item.pcm_bytes)
                 
                 case PageChangeMessage():
                     # Send page change instruction as JSON

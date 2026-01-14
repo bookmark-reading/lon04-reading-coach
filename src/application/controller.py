@@ -162,11 +162,18 @@ class ReadingCoachController:
         # Get user profile
         user_profile = self.user_profile_provider.get_user(UUID(user_id))
         
-        # Get books for the user's reading level
+        # Get books for the user's reading level with real page counts
         books = self.book_provider.get_books_by_reading_level(user_profile.current_reading_level)
+        
+        # Ensure we get real page counts from PDFs
+        updated_books = []
+        for book in books:
+            # Get metadata with content to calculate real page count
+            book_with_content = self.book_provider.get_book_metadata(book.book_id, include_content=True)
+            updated_books.append(book_with_content)
         
         # Convert to dict for JSON response.
         # We intentionally exclude the raw PDF bytes in `content` because JSON
         # encoding of arbitrary binary data will fail (and is inefficient).
         # The server-side code can still use `BookMetadata.content` internally.
-        return [book.model_dump(exclude={"content"}) for book in books]
+        return [book.model_dump(exclude={"content"}) for book in updated_books]
