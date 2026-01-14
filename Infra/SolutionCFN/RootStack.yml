@@ -128,7 +128,6 @@ Resources:
         - Region: !Ref TemplateBucketRegion
           TemplateBucket: !Sub "${AWS::AccountId}-${TemplateBucketNameSuffix}"
       Parameters:
-        UserPoolId: !GetAtt AuthStack.Outputs.UserPoolId
         UserPoolClientId: !GetAtt AuthStack.Outputs.UserPoolClientId
         UserPoolIssuerUrl: !GetAtt AuthStack.Outputs.UserPoolIssuerUrl
         BooksBucketName: !GetAtt DataStack.Outputs.BooksBucketName
