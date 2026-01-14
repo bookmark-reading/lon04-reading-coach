@@ -364,6 +364,10 @@ Lambdas → generate S3 presigned URLs
 
 ---
 
+# Solution decriprion and testing scenario
+
+• Solution described and diagrammed in the SolutionCFN/README.md
+• Please enter the SolutionCFN folder for github to display it.
 
 ---
 
