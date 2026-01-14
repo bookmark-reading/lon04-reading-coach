@@ -231,6 +231,11 @@ These values come from **RootStack → Outputs**:
 
 ## 0. Health check - just checking if API responds
 
+Set API environment variable:
+```
+API="https://4kfn550ul2.execute-api.us-west-2.amazonaws.com"
+```
+Run:
 ```
 curl $API/health
 ```
