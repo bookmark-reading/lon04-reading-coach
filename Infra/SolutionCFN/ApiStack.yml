@@ -76,7 +76,7 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "bookmark-reading-api-lambda-${AWS::StackName}"
+      # RoleName: !Sub "bookmark-reading-api-lambda-${AWS::StackName}"   # REMOVE
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -91,7 +91,6 @@ Resources:
               - Effect: Allow
                 Action: ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"]
                 Resource: "*"
-
         - PolicyName: "dynamodb"
           PolicyDocument:
             Version: "2012-10-17"
@@ -104,7 +103,6 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}"
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}/index/*"
-
         - PolicyName: "s3"
           PolicyDocument:
             Version: "2012-10-17"
