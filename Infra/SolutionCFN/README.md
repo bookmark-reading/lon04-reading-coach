@@ -386,7 +386,7 @@ Uses:
 ## 6. Get presigned URL
 
 ```
-curl "$API/books/book-l3-monkey/url" \
+curl "$API/books/book-l3-monkey-business/url" \
  -H "Authorization: Bearer $TOKEN"
 ```
 

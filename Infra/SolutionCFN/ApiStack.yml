@@ -136,35 +136,48 @@ Resources:
           USER_TABLE: !Ref UserProfilesTableName
       Code:
         ZipFile: |
-          import os,json,boto3
+          import os, json, boto3
+          from decimal import Decimal
+
           # Profiles table: PK=userId (Cognito 'sub')
-          T=os.environ["USER_TABLE"]; d=boto3.resource("dynamodb").Table(T)
+          T = os.environ["USER_TABLE"]
+          d = boto3.resource("dynamodb").Table(T)
 
           def uid(e):
             # Claims injected by HTTP API JWT authorizer
-            rc=e.get("requestContext") or {}; a=rc.get("authorizer") or {}; j=a.get("jwt") or {}; c=j.get("claims") or {}
+            rc = e.get("requestContext") or {}
+            a = rc.get("authorizer") or {}
+            j = a.get("jwt") or {}
+            c = j.get("claims") or {}
             return c.get("sub")
 
-          def resp(s,b):
-            return {"statusCode":s,"headers":{"content-type":"application/json"},"body":json.dumps(b)}
+          def _json_default(o):
+            # DynamoDB returns numbers as Decimal; convert to JSON-safe types.
+            if isinstance(o, Decimal):
+              return int(o) if o % 1 == 0 else float(o)
+            raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
-          def handler(event,context):
-            u=uid(event)
-            if not u: return {"statusCode":401,"body":"Unauthorized"}
+          def resp(s, b):
+            return {"statusCode": s, "headers": {"content-type": "application/json"}, "body": json.dumps(b, default=_json_default)}
 
-            m=((event.get("requestContext") or {}).get("http") or {}).get("method","")
+          def handler(event, context):
+            u = uid(event)
+            if not u:
+              return {"statusCode": 401, "body": "Unauthorized"}
 
-            if m=="GET":
-              it=(d.get_item(Key={"userId":u}).get("Item")) or {"userId":u}
-              return resp(200,it)
+            m = ((event.get("requestContext") or {}).get("http") or {}).get("method", "")
 
-            if m=="PUT":
-              b=json.loads(event.get("body") or "{}")
-              it={"userId":u,"firstName":b.get("firstName"),"lastName":b.get("lastName"),"grade":b.get("grade")}
+            if m == "GET":
+              it = (d.get_item(Key={"userId": u}).get("Item")) or {"userId": u}
+              return resp(200, it)
+
+            if m == "PUT":
+              b = json.loads(event.get("body") or "{}")
+              it = {"userId": u, "firstName": b.get("firstName"), "lastName": b.get("lastName"), "grade": b.get("grade")}
               d.put_item(Item=it)
-              return resp(200,it)
+              return resp(200, it)
 
-            return {"statusCode":405,"body":"Method Not Allowed"}
+            return {"statusCode": 405, "body": "Method Not Allowed"}
 
   ListBooksFunctionLambda:
     Type: AWS::Lambda::Function
@@ -181,27 +194,41 @@ Resources:
           BOOKS_GSI: "GradeIndex"
       Code:
         ZipFile: |
-          import os,json,boto3
+          import os, json, boto3
+          from decimal import Decimal
           from boto3.dynamodb.conditions import Key
+
           # Reads user grade then queries Books via GradeIndex (PK=grade)
-          U=boto3.resource("dynamodb").Table(os.environ["USER_TABLE"])
-          B=boto3.resource("dynamodb").Table(os.environ["BOOKS_TABLE"])
-          G=os.environ.get("BOOKS_GSI","GradeIndex")
+          U = boto3.resource("dynamodb").Table(os.environ["USER_TABLE"])
+          B = boto3.resource("dynamodb").Table(os.environ["BOOKS_TABLE"])
+          G = os.environ.get("BOOKS_GSI", "GradeIndex")
 
           def uid(e):
-            rc=e.get("requestContext") or {}; a=rc.get("authorizer") or {}; j=a.get("jwt") or {}; c=j.get("claims") or {}
+            rc = e.get("requestContext") or {}
+            a = rc.get("authorizer") or {}
+            j = a.get("jwt") or {}
+            c = j.get("claims") or {}
             return c.get("sub")
 
-          def handler(event,context):
-            u=uid(event)
-            if not u: return {"statusCode":401,"body":"Unauthorized"}
+          def _json_default(o):
+            # DynamoDB returns numbers as Decimal; convert to JSON-safe types.
+            if isinstance(o, Decimal):
+              return int(o) if o % 1 == 0 else float(o)
+            raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
-            p=(U.get_item(Key={"userId":u}).get("Item")) or {}
-            gr=p.get("grade")
-            if gr is None: return {"statusCode":400,"body":"User profile is missing grade"}
+          def handler(event, context):
+            u = uid(event)
+            if not u:
+              return {"statusCode": 401, "body": "Unauthorized"}
 
-            res=B.query(IndexName=G,KeyConditionExpression=Key("grade").eq(gr))
-            return {"statusCode":200,"headers":{"content-type":"application/json"},"body":json.dumps(res.get("Items") or [])}
+            p = (U.get_item(Key={"userId": u}).get("Item")) or {}
+            gr = p.get("grade")
+            if gr is None:
+              return {"statusCode": 400, "body": "User profile is missing grade"}
+
+            res = B.query(IndexName=G, KeyConditionExpression=Key("grade").eq(gr))
+            items = res.get("Items") or []
+            return {"statusCode": 200, "headers": {"content-type": "application/json"}, "body": json.dumps(items, default=_json_default)}
 
   GetBookUrlFunctionLambda:
     Type: AWS::Lambda::Function
@@ -218,24 +245,34 @@ Resources:
           URL_TTL_SECONDS: "3600"
       Code:
         ZipFile: |
-          import os,json,boto3
+          import os, json, boto3
+          from decimal import Decimal
+
           # Fetches book.s3Key then returns a presigned S3 URL (1 hour).
-          bb=os.environ["BOOKS_BUCKET"]; bt=os.environ["BOOKS_TABLE"]; ttl=int(os.environ.get("URL_TTL_SECONDS","3600"))
-          d=boto3.resource("dynamodb").Table(bt); s3=boto3.client("s3")
+          bb = os.environ["BOOKS_BUCKET"]
+          bt = os.environ["BOOKS_TABLE"]
+          ttl = int(os.environ.get("URL_TTL_SECONDS", "3600"))
+          d = boto3.resource("dynamodb").Table(bt)
+          s3 = boto3.client("s3")
 
-          def handler(event,context):
-            bid=(event.get("pathParameters") or {}).get("bookId")
-            if not bid: return {"statusCode":400,"body":"Missing bookId"}
+          def _json_default(o):
+            if isinstance(o, Decimal):
+              return int(o) if o % 1 == 0 else float(o)
+            raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
-            it=(d.get_item(Key={"bookId":bid}).get("Item"))
-            if not it or not it.get("s3Key"): return {"statusCode":404,"body":"Book not found"}
+          def handler(event, context):
+            bid = (event.get("pathParameters") or {}).get("bookId")
+            if not bid:
+              return {"statusCode": 400, "body": "Missing bookId"}
 
-            url=s3.generate_presigned_url("get_object",Params={"Bucket":bb,"Key":it["s3Key"]},ExpiresIn=ttl)
-            return {"statusCode":200,"headers":{"content-type":"application/json"},"body":json.dumps({"url":url,"expiresInSeconds":ttl})}
+            it = (d.get_item(Key={"bookId": bid}).get("Item"))
+            if not it or not it.get("s3Key"):
+              return {"statusCode": 404, "body": "Book not found"}
 
-  #########################################################
-  # Integrations (Lambda proxy / payload v2.0)
-  #########################################################
+            url = s3.generate_presigned_url("get_object", Params={"Bucket": bb, "Key": it["s3Key"]}, ExpiresIn=ttl)
+            return {"statusCode": 200, "headers": {"content-type": "application/json"}, "body": json.dumps({"url": url, "expiresInSeconds": ttl}, default=_json_default)}
+
+
   HealthIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
