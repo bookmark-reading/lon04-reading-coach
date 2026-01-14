@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Reading Buddy v49 - Interactive Reading</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #ff6633; min-height: 100vh; }
+        .header { background: #13123a; padding: 15px 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .greeting { font-size: 1.5rem; color: white; font-weight: 600; }
+        .main-container { display: flex; height: calc(100vh - 70px); }
+        .left-panel { width: 280px; background: #13123a; padding: 20px; overflow-y: auto; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+        .left-panel h3 { color: white; margin-bottom: 15px; }
+        .book-item { padding: 15px; margin: 10px 0; background: rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; border: 2px solid rgba(255,255,255,0.2); transition: all 0.3s; color: white; }
+        .book-item:hover { border-color: #ff6633; transform: translateX(5px); background: rgba(255,255,255,0.15); }
+        .book-item.active { background: #ff6633; border-color: #ff6633; }
+        .main-content { flex: 1; background: white; margin: 20px; border-radius: 15px; overflow: hidden; display: flex; flex-direction: column; }
+        .pdf-container { flex: 1; padding: 20px; overflow: auto; background: #f8f9fa; }
+        .pdf-controls { padding: 10px; background: white; text-align: center; border-bottom: 2px solid #dee2e6; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: center; align-items: center; gap: 20px; }
+        .pdf-controls button { padding: 8px 16px; margin: 0 5px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 1rem; }
+        .pdf-controls button:hover { background: #5568d3; }
+        .pdf-controls button:disabled { background: #ccc; cursor: not-allowed; }
+        #pdf-canvas { max-width: 100%; height: auto; display: block; margin: 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); background: white; }
+        .placeholder { text-align: center; padding: 100px 20px; color: #999; }
+        .error-box { background: #f8d7da; border: 2px solid #f5c6cb; color: #721c24; padding: 30px; border-radius: 10px; margin: 20px; }
+        .right-panel { width: 300px; background: white; display: flex; flex-direction: column; margin: 20px 20px 20px 0; border-radius: 15px; overflow: hidden; }
+        .avatar-section { flex: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-bottom: 2px solid #e9ecef; }
+        .avatar { font-size: 6rem; margin-bottom: 10px; animation: bounce 3s infinite; }
+        .avatar-name { font-size: 1.2rem; font-weight: bold; color: #667eea; margin-bottom: 15px; }
+        .recorder-section { flex: 1; background: #f8f9fa; padding: 15px; display: flex; flex-direction: column; }
+        .video-preview { width: 100%; max-width: 200px; height: 150px; background: #000; border-radius: 10px; margin-bottom: 10px; }
+        .video-preview video { width: 100%; height: 100%; border-radius: 10px; object-fit: cover; }
+        .logo { position: fixed; bottom: 20px; left: 20px; z-index: 1000; }
+        .logo img { height: 100px; width: auto; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+        .speech-bubble { background: white; padding: 15px 20px; border-radius: 20px; margin-top: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); max-width: 250px; text-align: center; font-size: 0.9rem; color: #333; }
+        .recorder-section { flex: 1; background: #f8f9fa; padding: 15px; display: flex; flex-direction: column; }
+        .timer { font-size: 1.2rem; font-weight: bold; color: #dc3545; text-align: center; margin: 5px 0; font-family: monospace; }
+        .waveform { height: 30px; background: #e9ecef; border-radius: 5px; margin: 5px 0; display: flex; align-items: center; justify-content: center; gap: 2px; padding: 5px; }
+        .wave-bar { width: 3px; background: #dc3545; border-radius: 2px; transition: height 0.1s; }
+        .wave-bar.active { animation: wave 0.5s ease-in-out infinite alternate; }
+        @keyframes wave { from { height: 5px; } to { height: 30px; } }
+        .record-btn { width: 100%; padding: 10px; background: #dc3545; color: white; border: none; border-radius: 50px; font-size: 0.9rem; cursor: pointer; transition: all 0.3s; margin-top: 5px; }
+        .record-btn:hover { background: #c82333; transform: scale(1.05); }
+        .record-btn.recording { background: #28a745; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .status { margin-top: 5px; font-size: 0.75rem; color: #666; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="greeting">👋 Hello, <span id="username">Student</span>! Ready to read?</div>
+    </div>
+    
+    <div class="main-container">
+        <div class="left-panel">
+            <h3>📚 Your Books</h3>
+            <div id="book-list">
+                <p style="color: white; text-align: center; padding: 20px;">Loading books...</p>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="pdf-container" id="pdf-viewer">
+                <div class="placeholder">
+                    <h2>📚 Select a book to start reading</h2>
+                    <p>Choose a book from the left panel</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="right-panel">
+            <div class="avatar-section">
+                <div class="avatar">🦊</div>
+                <div class="avatar-name">Fable the Fox</div>
+                <div class="speech-bubble" id="speech">Hi! Pick a book and let's read together!</div>
+            </div>
+            
+            <div class="recorder-section">
+                <div class="video-preview">
+                    <video id="videoPreview" autoplay muted playsinline></video>
+                </div>
+                <h4>🎙️ Reading Session</h4>
+                <div class="timer" id="timer">00:00</div>
+                <div class="waveform">
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                </div>
+                <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+                    <span id="recordText">Start Session</span>
+                </button>
+                <div class="status" id="recordStatus">Duration: 00:00</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="logo">
+        <img src="https://dhr91o08xrgul.cloudfront.net/image/vco_31100_e18e2bb333_2d532bc701_073699a8e3_16031131.png" alt="Bookmark Reading">
+    </div>
+    
+    <script>
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8000' 
+            : 'https://d2ly2yw37wzs0h.cloudfront.net/ports/8000';
+        const WS_URL = window.location.hostname === 'localhost'
+            ? 'ws://localhost:8000'
+            : 'wss://d2ly2yw37wzs0h.cloudfront.net/ports/8000';
+        const USER_ID = '12345678-1234-5678-1234-567812345678';
+        let isRecording = false;
+        let mediaRecorder = null;
+        let videoRecorder = null;
+        let recordingStartTime = null;
+        let timerInterval = null;
+        let recordedChunks = [];
+        let currentBookId = null;
+        let currentPageText = '';
+        let ws = null;
+        let sessionId = null;
+        let canTurnPage = false;
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let pageNumPending = null;
+        let audioContext = null;
+        let audioProcessor = null;
+        let audioStream = null;
+        
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        console.log('🚀 App loaded. API:', API_URL);
+        
+        function renderPage(num) {
+            pageRendering = true;
+            pdfDoc.getPage(num).then(page => {
+                const canvas = document.getElementById('pdf-canvas');
+                const ctx = canvas.getContext('2d');
+                const viewport = page.getViewport({scale: 1.5});
+                
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                
+                page.render(renderContext).promise.then(() => {
+                    pageRendering = false;
+                    if (pageNumPending !== null) {
+                        renderPage(pageNumPending);
+                        pageNumPending = null;
+                    }
+                });
+            });
+            
+            document.getElementById('page-num').textContent = num;
+        }
+        
+        function queueRenderPage(num) {
+            if (pageRendering) {
+                pageNumPending = num;
+            } else {
+                renderPage(num);
+            }
+        }
+        
+
+        
+        async function loadBooks() {
+            // Start video preview
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                document.getElementById('videoPreview').srcObject = stream;
+            } catch (error) {
+                console.log('Camera not available:', error);
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/books?user_id=${USER_ID}&t=${Date.now()}`);
+                const data = await response.json();
+                
+                document.getElementById('book-list').innerHTML = data.books.map(book => `
+                    <div class="book-item" data-book-id="${book.book_id}" data-book-name="${book.book_name}">
+                        <h4>📖 ${book.book_name}</h4>
+                        <p>Level: ${book.reading_level} | Pages: ${book.total_pages}</p>
+                    </div>
+                `).join('');
+                
+                document.querySelectorAll('.book-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        selectBook(this.dataset.bookId, this.dataset.bookName);
+                    });
+                });
+                
+                // Auto-select first book
+                if (data.books.length > 0) {
+                    selectBook(data.books[0].book_id, data.books[0].book_name);
+                }
+            } catch (error) {
+                console.error('Error loading books:', error);
+            }
+        }
+        
+        async function loadPageText(page) {
+            try {
+                const response = await fetch(`${API_URL}/textract/${currentBookId}?page=${page}`);
+                const data = await response.json();
+                currentPageText = data.text || '';
+                console.log('Page text loaded:', currentPageText, 'Has text:', data.has_text);
+                
+                // Check if page has actual content (not just mock text)
+                const hasRealText = data.has_text && currentPageText.trim().length > 20;
+                
+                if (hasRealText) {
+                    canTurnPage = false;
+                    document.getElementById('speech').textContent = `Start reading to unlock the next page!`;
+                    
+                    if (isRecording) {
+                        setTimeout(() => {
+                            canTurnPage = true;
+                            document.getElementById('speech').textContent = "Great job! Turn to the next page!";
+                        }, 10000);
+                    }
+                } else {
+                    canTurnPage = true;
+                    document.getElementById('speech').textContent = "Turn to the next page!";
+                }
+            } catch (error) {
+                console.error('Textract error:', error);
+                canTurnPage = true;
+                document.getElementById('speech').textContent = "Turn to the next page!";
+            }
+        }
+        
+        function selectBook(bookId, bookName) {
+            console.log('📖 Selecting:', bookName, bookId);
+            currentBookId = bookId;
+            document.querySelectorAll('.book-item').forEach(item => item.classList.remove('active'));
+            document.querySelector(`[data-book-id="${bookId}"]`).classList.add('active');
+            
+            const backendPdfUrl = `${API_URL}/pdf/${bookId}`;
+            console.log('📄 Loading PDF from backend:', backendPdfUrl);
+            
+            const viewer = document.getElementById('pdf-viewer');
+            viewer.innerHTML = `
+                <h2 style="padding: 20px; color: #333;">📖 ${bookName}</h2>
+                <div class="pdf-controls">
+                    <span style="font-size: 1.1rem; font-weight: bold;">Page <span id="page-num"></span> of <span id="page-count"></span></span>
+                </div>
+                <canvas id="pdf-canvas"></canvas>
+            `;
+            
+            pdfjsLib.getDocument({url: backendPdfUrl, password: ''}).promise.then(pdf => {
+                pdfDoc = pdf;
+                document.getElementById('page-count').textContent = pdf.numPages;
+                pageNum = 1;
+                renderPage(pageNum);
+            }).catch(err => {
+                viewer.innerHTML = `
+                    <div style="padding: 40px; text-align: center; color: #dc3545;">
+                        <h3>❌ Failed to load PDF</h3>
+                        <p>Error: ${err.message}</p>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('speech').textContent = `Great choice! Let's read "${bookName}"!`;
+        }
+        
+        async function toggleRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+                    document.getElementById('videoPreview').srcObject = stream;
+                    
+                    // Connect WebSocket
+                    ws = new WebSocket(`${WS_URL}/ws?token=demo-token`);
+                    
+                    ws.onopen = () => {
+                        console.log('WebSocket connected');
+                        ws.send(JSON.stringify({
+                            type: 'session.create',
+                            student_id: USER_ID,
+                            book_id: currentBookId,
+                            current_page: pageNum
+                        }));
+                        
+                        // Start audio streaming
+                        startAudioStreaming(stream);
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        console.log('WS message:', data);
+                        
+                        if (data.type === 'session.ready') {
+                            sessionId = data.session_id;
+                            document.getElementById('speech').textContent = 'Start reading this page!';
+                        } else if (data.type === 'page_change') {
+                            const newPage = data.page;
+                            console.log('📄 Page change to:', newPage);
+                            if (newPage && newPage !== pageNum) {
+                                pageNum = newPage;
+                                queueRenderPage(pageNum);
+                                document.getElementById('speech').textContent = `Great job! Now read page ${newPage}!`;
+                            }
+                        } else if (data.type === 'feedback') {
+                            document.getElementById('speech').textContent = data.message;
+                        } else if (data.type === 'notice') {
+                            console.log('Notice:', data.message);
+                        } else if (data.type === 'audio_out') {
+                            // Future: Send data.text to Nova Sonic for TTS
+                            console.log('🔊 Audio text for Nova Sonic:', data.text);
+                            document.getElementById('speech').textContent = data.text;
+                        }
+                    };
+                    
+                    recordedChunks = [];
+                    videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                    
+                    videoRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) recordedChunks.push(event.data);
+                    };
+                    
+                    videoRecorder.onstop = async () => {
+                        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                        await uploadRecording(blob);
+                        if (ws) ws.close();
+                    };
+                    
+                    videoRecorder.start();
+                    isRecording = true;
+                    recordingStartTime = Date.now();
+                    canTurnPage = true;
+                    
+                    document.getElementById('recordBtn').classList.add('recording');
+                    document.getElementById('recordText').textContent = 'End Session';
+                    document.getElementById('recordStatus').textContent = 'Duration: 00:00';
+                    document.querySelectorAll('.wave-bar').forEach(bar => bar.classList.add('active'));
+                    timerInterval = setInterval(updateTimer, 1000);
+                } catch (error) {
+                    alert('Camera/Microphone access denied');
+                }
+            } else {
+                stopAudioStreaming();
+                if (ws) ws.close();
+                videoRecorder.stop();
+                const stream = document.getElementById('videoPreview').srcObject;
+                stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                
+                document.getElementById('recordBtn').classList.remove('recording');
+                document.getElementById('recordText').textContent = 'Start Session';
+                document.getElementById('timer').textContent = '00:00';
+                document.getElementById('recordStatus').textContent = 'Uploading...';
+                document.querySelectorAll('.wave-bar').forEach(bar => bar.classList.remove('active'));
+                clearInterval(timerInterval);
+            }
+        }
+        
+        async function uploadRecording(blob) {
+            try {
+                const formData = new FormData();
+                formData.append('video', blob, 'recording.webm');
+                formData.append('user_id', USER_ID);
+                formData.append('book_id', currentBookId || 'unknown');
+                
+                const response = await fetch(`${API_URL}/upload-recording`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                document.getElementById('recordStatus').textContent = 'Saved to S3!';
+                console.log('Upload result:', result);
+                setTimeout(() => {
+                    document.getElementById('recordStatus').textContent = 'Duration: 00:00';
+                }, 3000);
+            } catch (error) {
+                console.error('Upload error:', error);
+                document.getElementById('recordStatus').textContent = 'Upload failed';
+            }
+        }
+        
+        function updateTimer() {
+            const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            const timeStr = `${minutes}:${seconds}`;
+            document.getElementById('timer').textContent = timeStr;
+            document.getElementById('recordStatus').textContent = `Duration: ${timeStr}`;
+        }
+        
+        function startAudioStreaming(stream) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const source = audioContext.createMediaStreamSource(stream);
+            audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+            
+            audioProcessor.onaudioprocess = (e) => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcm16 = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    pcm16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+                }
+                ws.send(pcm16.buffer);
+            };
+            
+            source.connect(audioProcessor);
+            audioProcessor.connect(audioContext.destination);
+            console.log('🎤 Audio streaming started');
+        }
+        
+        function stopAudioStreaming() {
+            if (audioProcessor) {
+                audioProcessor.disconnect();
+                audioProcessor = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            console.log('🎤 Audio streaming stopped');
+        }
+        
+        loadBooks();
+    </script>
+</body>
+</html>

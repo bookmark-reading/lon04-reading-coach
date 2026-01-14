@@ -30,21 +30,24 @@ class LocalBookProvider(BookProvider):
             book_name="Bathtub Safari",
             reading_level=2,
             total_pages=16,
-            path="s3://bookmark-hackathon-source-files/L.2 - Bathtub Safari.pdf"
+            path="s3://bookmark-hackathon-source-files/L.2 - Bathtub Safari.pdf",
+            content="s3://bookmark-hackathon-source-files/L.2 - Bathtub Safari.json"
         )
         self._metadata["monkey-business"] = BookMetadata(
             book_id="monkey-business",
             book_name="Monkey Business",
             reading_level=3,
-            total_pages=16,
-            path="s3://bookmark-hackathon-source-files/L.3 - Monkey Business.pdf"
+            total_pages=21,
+            path="s3://bookmark-hackathon-source-files/L.3 - Monkey Business.pdf",
+            content="s3://bookmark-hackathon-source-files/L.3 - Monkey Business.json"
         )
         self._metadata["lion-who-wouldnt-try"] = BookMetadata(
             book_id="lion-who-wouldnt-try",
             book_name="The Lion who Wouldn't Try",
             reading_level=3,
             total_pages=16,
-            path="s3://bookmark-hackathon-source-files/L.3 - The Lion who Wouldn't Try.pdf"
+            path="s3://bookmark-hackathon-source-files/L.3 - The Lion who Wouldn't Try.pdf",
+            content="s3://bookmark-hackathon-source-files/L.3 - The Lion who Wouldn't Try.json"
         )
     
     def get_book_metadata(self, book_id: str) -> BookMetadata:
@@ -67,43 +70,63 @@ class LocalBookProvider(BookProvider):
     def get_book(self, book_id: str) -> Book:
         """Retrieve a complete book by book ID.
         
-        For S3 paths, returns a Book with empty content since the PDF
-        is served directly via the /pdf endpoint.
+        Loads JSON content from metadata.content field.
         
         Args:
             book_id: The unique identifier of the book.
             
         Returns:
-            Book: The complete book entity with metadata.
+            Book: Book with PDF path in metadata, JSON content in file_content.
             
         Raises:
             ValueError: If the book metadata is not found.
         """
         metadata = self.get_book_metadata(book_id)
         
-        # For S3 paths, return empty content (PDF served via API endpoint)
-        if metadata.path.startswith('s3://'):
+        if metadata.content and metadata.content.startswith('s3://'):
+            import boto3
+            import json
+            
+            s3_path = metadata.content.replace('s3://', '')
+            bucket_name = s3_path.split('/')[0]
+            object_key = '/'.join(s3_path.split('/')[1:])
+            
+            s3_client = boto3.client('s3', region_name='us-west-2')
+            try:
+                response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+                file_content = response['Body'].read()
+            except Exception:
+                file_content = json.dumps({"book_id": book_id, "pages": []}).encode('utf-8')
+            
             return Book(
                 book_id=book_id,
-                file_content=b'',
+                file_content=file_content,
                 metadata=metadata
             )
         
-        # For local files, read the content
-        file_path = os.path.join(self._base_path, metadata.path)
-        try:
-            with open(file_path, "rb") as f:
-                file_content = f.read()
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Book file not found at path: {file_path}"
+        # For local files
+        if metadata.content:
+            file_path = os.path.join(self._base_path, metadata.content)
+            try:
+                with open(file_path, "rb") as f:
+                    file_content = f.read()
+            except FileNotFoundError:
+                import json
+                file_content = json.dumps({"book_id": book_id, "pages": []}).encode('utf-8')
+            except IOError as e:
+                raise IOError(f"Error reading book file: {e}")
+            
+            return Book(
+                book_id=book_id,
+                file_content=file_content,
+                metadata=metadata
             )
-        except IOError as e:
-            raise IOError(f"Error reading book file: {e}")
         
+        # Fallback: empty content
+        import json
         return Book(
             book_id=book_id,
-            file_content=file_content,
+            file_content=json.dumps({"book_id": book_id, "pages": []}).encode('utf-8'),
             metadata=metadata
         )
     

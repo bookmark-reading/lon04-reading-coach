@@ -71,29 +71,35 @@ class AWSBookProvider(BookProvider):
     def get_book(self, book_id: str) -> Book:
         """Retrieve a complete book by book ID.
         
-        Retrieves metadata from DynamoDB and the file from S3.
+        Retrieves metadata from DynamoDB and JSON content from S3.
         
         Args:
             book_id: The unique identifier of the book.
             
         Returns:
-            Book: The complete book entity with metadata and file content.
+            Book: The complete book entity with metadata and JSON file content.
             
         Raises:
             ValueError: If the book metadata is not found.
-            FileNotFoundError: If the book file cannot be accessed from S3.
         """
-        # Always request metadata with content so we don't need a second S3 round-trip.
-        metadata = self.get_book_metadata(book_id, include_content=True)
+        metadata = self.get_book_metadata(book_id, include_content=False)
         
-        # Ensure we have file content, falling back to a direct S3 read if needed.
-        if metadata.content is not None:
-            file_content = metadata.content
+        # Load JSON content from S3 using metadata.content field
+        if metadata.content and metadata.content.startswith('s3://'):
+            import json
+            
+            s3_path = metadata.content.replace('s3://', '')
+            bucket_name = s3_path.split('/')[0]
+            object_key = '/'.join(s3_path.split('/')[1:])
+            
+            try:
+                response = self.s3_client.get_object(Bucket=bucket_name, Key=object_key)
+                file_content = response['Body'].read()
+            except Exception:
+                file_content = json.dumps({"book_id": book_id, "pages": []}).encode('utf-8')
         else:
-            metadata = self._load_content_for_metadata(metadata)
-            if metadata.content is None:
-                raise IOError(f"Unable to load content for book_id={book_id} from S3")
-            file_content = metadata.content
+            import json
+            file_content = json.dumps({"book_id": book_id, "pages": []}).encode('utf-8')
         
         return Book(
             book_id=book_id,
@@ -128,13 +134,6 @@ class AWSBookProvider(BookProvider):
         Returns:
             BookMetadata: The book metadata entity.
         """
-        # Map DynamoDB schema to BookMetadata schema:
-        # - bookId -> book_id
-        # - title -> book_name
-        # - grade -> reading_level
-        # - s3Key -> path (construct full S3 path)
-        
-        # Handle Decimal type from DynamoDB
         grade_value = item.get("grade")
         if hasattr(grade_value, '__int__'):
             reading_level = int(grade_value)
@@ -142,21 +141,21 @@ class AWSBookProvider(BookProvider):
             reading_level = int(grade_value) if grade_value else 1
         
         s3_key = item.get("s3Key", "")
-        # Construct full S3 path if not already present
         if s3_key and not s3_key.startswith("s3://"):
             path = f"s3://{self.bucket_name}/{s3_key}"
         else:
             path = s3_key or f"s3://{self.bucket_name}/"
         
+        # Derive JSON content path from PDF path
+        content = path.replace('.pdf', '.json') if path.endswith('.pdf') else None
+        
         return BookMetadata(
             book_id=item["bookId"],
             book_name=item["title"],
             reading_level=reading_level,
-            # We set a temporary placeholder; real page count is computed
-            # when loading content from S3 in _load_content_for_metadata.
-            total_pages=1,
+            total_pages=item.get("total_pages", 1),
             path=path,
-            content=None,  # Content loaded separately when needed
+            content=content
         )
     
     def _load_content_for_metadata(self, metadata: BookMetadata) -> BookMetadata:
