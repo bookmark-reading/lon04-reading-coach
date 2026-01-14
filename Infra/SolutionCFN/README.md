@@ -201,6 +201,8 @@ DataStack.yml → Outputs
 RootStack.yml → Outputs
 
 ---
+---
+---
 
 # End‑to‑end testing
 
@@ -227,8 +229,13 @@ These values come from **RootStack → Outputs**:
 
 ---
 
-## 1. Health check
+## 0. Health check - just checking if API responds
 
+Set API environment variable:
+```
+API="https://4kfn550ul2.execute-api.us-west-2.amazonaws.com"
+```
+Run:
 ```
 curl $API/health
 ```
@@ -239,7 +246,7 @@ Expected
 ```
 
 ---
-## 1. – Get authorization code (BROWSER)
+## 1. Get authorization code (BROWSER)
 
 **This step must be done in a browser – NOT CLI**
 
@@ -269,8 +276,12 @@ AbCdEf123456
 
 ## 2. Login and get JWT
 
+Paste the code here:
 ```
-CODE=AbCdEf123456
+CODE=
+```
+Run the below:
+```
 CLIENT_ID=32csubg36n61bg91sp0r4l1idl
 HOST=https://bookmark-reading-bb.auth.us-west-2.amazoncognito.com
 REDIRECT=http://localhost:3000/callback
@@ -299,7 +310,7 @@ Why: Cognito user ≠ DynamoDB profile.
 curl -X PUT "$API/profile" \
  -H "Authorization: Bearer $TOKEN" \
  -H "content-type: application/json" \
- -d '{"firstName":"Kid","lastName":"Test","grade":3}'
+ -d '{"firstName":"Kid","lastName":"Test","grade":"3"}'
 ```
 
 Verify
