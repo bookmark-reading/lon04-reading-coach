@@ -1,6 +1,7 @@
 """Book entities for the reading coach application."""
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional
 
 
 class BookMetadata(BaseModel):
@@ -17,6 +18,7 @@ class BookMetadata(BaseModel):
     reading_level: int = Field(ge=1, le=7, description="Recommended reading level (1-7)")
     total_pages: int = Field(ge=1, description="Total number of pages in the book")
     path: str = Field(min_length=1, description="Path or key to the book file (local path or S3 key)")
+    content: Optional[bytes] = Field(default=None, description="The actual book file content")
 
 
 class Book(BaseModel):

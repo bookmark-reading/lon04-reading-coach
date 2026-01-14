@@ -165,5 +165,8 @@ class ReadingCoachController:
         # Get books for the user's reading level
         books = self.book_provider.get_books_by_reading_level(user_profile.current_reading_level)
         
-        # Convert to dict for JSON response
-        return [book.model_dump() for book in books]
+        # Convert to dict for JSON response.
+        # We intentionally exclude the raw PDF bytes in `content` because JSON
+        # encoding of arbitrary binary data will fail (and is inefficient).
+        # The server-side code can still use `BookMetadata.content` internally.
+        return [book.model_dump(exclude={"content"}) for book in books]
