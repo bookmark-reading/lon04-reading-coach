@@ -204,6 +204,29 @@ RootStack.yml → Outputs
 
 # End‑to‑end testing
 
+## Prerequisites
+
+You must have:
+
+- Root stack deployed successfully
+- A user created in Cognito User Pool
+- Browser access
+- `curl` and `jq` installed locally
+
+---
+
+## Stack outputs used
+
+These values come from **RootStack → Outputs**:
+
+| Output | Value |
+|--------|-------|
+| HostedUiBaseUrl | https://bookmark-reading-bb.auth.us-west-2.amazoncognito.com |
+| UserPoolClientId | 32csubg36n61bg91sp0r4l1idl |
+| ApiBaseUrl | https://4kfn550ul2.execute-api.us-west-2.amazonaws.com |
+
+---
+
 ## 1. Health check
 
 ```
@@ -216,30 +239,54 @@ Expected
 ```
 
 ---
+## 1. – Get authorization code (BROWSER)
+
+**This step must be done in a browser – NOT CLI**
+
+Open this URL:
+
+```
+https://bookmark-reading-bb.auth.us-west-2.amazoncognito.com/login?client_id=32csubg36n61bg91sp0r4l1idl&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:3000/callback
+```
+
+### What happens
+
+1. Cognito login page opens
+2. Log in using a user from the User Pool
+3. Browser redirects to:
+
+```
+http://localhost:3000/callback?code=XXXXXXXX
+```
+
+4. Copy the **code** value from the browser address bar
+
+Example:
+
+```
+AbCdEf123456
+```
 
 ## 2. Login and get JWT
 
-### Open Hosted UI
-
 ```
-echo "$HOST/login?client_id=$CLIENT_ID&response_type=code&scope=openid+email+profile&redirect_uri=$REDIRECT"
-```
-
-• Login  
-• Copy `code` from redirect URL
-
-### Exchange code
-
-```
-CODE=<PASTE_CODE>
+CODE=AbCdEf123456
+CLIENT_ID=32csubg36n61bg91sp0r4l1idl
+HOST=https://bookmark-reading-bb.auth.us-west-2.amazoncognito.com
+REDIRECT=http://localhost:3000/callback
 
 TOKEN=$(curl -s -X POST "$HOST/oauth2/token" \
- -H "content-type: application/x-www-form-urlencoded" \
- -d "grant_type=authorization_code&client_id=$CLIENT_ID&code=$CODE&redirect_uri=$REDIRECT" \
- | jq -er '.id_token')
+  -H "content-type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code&client_id=$CLIENT_ID&code=$CODE&redirect_uri=$REDIRECT" \
+| jq -er '.id_token')
 
 export TOKEN
-echo ${#TOKEN}
+```
+
+Verify:
+
+```
+echo "TOKEN length: ${#TOKEN}"
 ```
 
 ---
