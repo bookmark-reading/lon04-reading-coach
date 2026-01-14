@@ -1,10 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "ApiStack (CFN-only): HTTP API + Cognito JWT + inline python3.12 Lambdas (profile/books/url + health)"
+Description: "ApiStack (CFN-only): HTTP API + Cognito JWT + inline python3.12 Lambdas + /health"
 
 Parameters:
-  #########################################################
-  # Auth (from AuthStack)
-  #########################################################
+  # From AuthStack
   UserPoolClientId:
     Type: String
     Description: "JWT audience (Cognito app client id)"
@@ -12,9 +10,7 @@ Parameters:
     Type: String
     Description: "JWT issuer (Cognito user pool issuer URL)"
 
-  #########################################################
-  # Data (from DataStack)
-  #########################################################
+  # From DataStack
   BooksBucketName:
     Type: String
     Description: "S3 bucket storing PDF books"
@@ -28,9 +24,7 @@ Parameters:
 Resources:
   #########################################################
   # HTTP API
-  #
-  # - HTTP API (ApiGatewayV2) is simpler/cheaper than REST API
-  # - CORS is MVP-localhost; tighten once UI domain is known
+  # - MVP CORS for local UI; tighten later
   #########################################################
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
@@ -50,10 +44,8 @@ Resources:
       AutoDeploy: true
 
   #########################################################
-  # Cognito JWT authorizer
-  #
-  # - validates token signature/exp using Issuer
-  # - checks 'aud' matches the app client id
+  # JWT authorizer (Cognito)
+  # - validates issuer + audience
   #########################################################
   JwtAuthorizer:
     Type: AWS::ApiGatewayV2::Authorizer
@@ -68,15 +60,14 @@ Resources:
 
   #########################################################
   # Shared Lambda role
-  #
-  # - logs: always
-  # - dynamodb: profiles get/put; books get/query
-  # - s3:GetObject: required for presigned URL validity
+  # - logs
+  # - DynamoDB (profiles + books)
+  # - S3 GetObject (needed for presigned URL to work)
   #########################################################
-  LambdaExecutionRole:
+  ApiLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      # RoleName: !Sub "bookmark-reading-api-lambda-${AWS::StackName}"   # REMOVE
+      RoleName: ApiLambdaRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -84,14 +75,15 @@ Resources:
             Principal: { Service: lambda.amazonaws.com }
             Action: "sts:AssumeRole"
       Policies:
-        - PolicyName: "logs"
+        - PolicyName: LogsPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"]
                 Resource: "*"
-        - PolicyName: "dynamodb"
+
+        - PolicyName: DynamoDbPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -103,7 +95,8 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}"
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BooksTableName}/index/*"
-        - PolicyName: "s3"
+
+        - PolicyName: S3Policy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -112,16 +105,14 @@ Resources:
                 Resource: !Sub "arn:aws:s3:::${BooksBucketName}/*"
 
   #########################################################
-  # Health Lambda (public)
-  #
-  # - simplest wiring test: API -> Lambda -> 200 OK
-  # - no auth, no dependencies
+  # Lambdas (physical name == logical name)
   #########################################################
-  HealthFunction:
+
+  HealthFunctionLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "bookmark-reading-health-${AWS::StackName}"
-      Role: !GetAtt LambdaExecutionRole.Arn
+      FunctionName: HealthFunctionLambda
+      Role: !GetAtt ApiLambdaRole.Arn
       Runtime: python3.12
       Handler: index.handler
       Timeout: 5
@@ -129,20 +120,14 @@ Resources:
         ZipFile: |
           import json
           def handler(event, context):
-            # Pure wiring check (no auth / no ddb / no s3).
+            # Public liveness probe (no auth / no dependencies).
             return {"statusCode":200,"headers":{"content-type":"application/json"},"body":json.dumps({"ok":True})}
 
-  #########################################################
-  # Profile Lambda (JWT)
-  #
-  # - userId taken from JWT claim 'sub'
-  # - PUT stores firstName/lastName/grade in UserProfiles table
-  #########################################################
-  ProfileFunction:
+  ProfileFunctionLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "bookmark-reading-profile-${AWS::StackName}"
-      Role: !GetAtt LambdaExecutionRole.Arn
+      FunctionName: ProfileFunctionLambda
+      Role: !GetAtt ApiLambdaRole.Arn
       Runtime: python3.12
       Handler: index.handler
       Timeout: 10
@@ -152,37 +137,40 @@ Resources:
       Code:
         ZipFile: |
           import os,json,boto3
-          # Profile table keyed by userId (Cognito 'sub')
+          # Profiles table: PK=userId (Cognito 'sub')
           T=os.environ["USER_TABLE"]; d=boto3.resource("dynamodb").Table(T)
+
           def uid(e):
-            # JWT claims injected by HTTP API JWT authoriser
+            # Claims injected by HTTP API JWT authorizer
             rc=e.get("requestContext") or {}; a=rc.get("authorizer") or {}; j=a.get("jwt") or {}; c=j.get("claims") or {}
             return c.get("sub")
-          def r(s,b): return {"statusCode":s,"headers":{"content-type":"application/json"},"body":json.dumps(b)}
+
+          def resp(s,b):
+            return {"statusCode":s,"headers":{"content-type":"application/json"},"body":json.dumps(b)}
+
           def handler(event,context):
             u=uid(event)
             if not u: return {"statusCode":401,"body":"Unauthorized"}
+
             m=((event.get("requestContext") or {}).get("http") or {}).get("method","")
+
             if m=="GET":
               it=(d.get_item(Key={"userId":u}).get("Item")) or {"userId":u}
-              return r(200,it)
+              return resp(200,it)
+
             if m=="PUT":
               b=json.loads(event.get("body") or "{}")
               it={"userId":u,"firstName":b.get("firstName"),"lastName":b.get("lastName"),"grade":b.get("grade")}
-              d.put_item(Item=it); return r(200,it)
+              d.put_item(Item=it)
+              return resp(200,it)
+
             return {"statusCode":405,"body":"Method Not Allowed"}
 
-  #########################################################
-  # ListBooks Lambda (JWT)
-  #
-  # - reads user's grade from profile
-  # - queries Books via GSI GradeIndex (PK: grade)
-  #########################################################
-  ListBooksFunction:
+  ListBooksFunctionLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "bookmark-reading-books-list-${AWS::StackName}"
-      Role: !GetAtt LambdaExecutionRole.Arn
+      FunctionName: ListBooksFunctionLambda
+      Role: !GetAtt ApiLambdaRole.Arn
       Runtime: python3.12
       Handler: index.handler
       Timeout: 10
@@ -195,33 +183,31 @@ Resources:
         ZipFile: |
           import os,json,boto3
           from boto3.dynamodb.conditions import Key
-          # Tables + GSI name
+          # Reads user grade then queries Books via GradeIndex (PK=grade)
           U=boto3.resource("dynamodb").Table(os.environ["USER_TABLE"])
           B=boto3.resource("dynamodb").Table(os.environ["BOOKS_TABLE"])
           G=os.environ.get("BOOKS_GSI","GradeIndex")
+
           def uid(e):
             rc=e.get("requestContext") or {}; a=rc.get("authorizer") or {}; j=a.get("jwt") or {}; c=j.get("claims") or {}
             return c.get("sub")
+
           def handler(event,context):
             u=uid(event)
             if not u: return {"statusCode":401,"body":"Unauthorized"}
+
             p=(U.get_item(Key={"userId":u}).get("Item")) or {}
             gr=p.get("grade")
             if gr is None: return {"statusCode":400,"body":"User profile is missing grade"}
+
             res=B.query(IndexName=G,KeyConditionExpression=Key("grade").eq(gr))
             return {"statusCode":200,"headers":{"content-type":"application/json"},"body":json.dumps(res.get("Items") or [])}
 
-  #########################################################
-  # GetBookUrl Lambda (JWT)
-  #
-  # - gets Books item by bookId (expects attribute s3Key)
-  # - returns presigned GET URL (TTL = 1 hour)
-  #########################################################
-  GetBookUrlFunction:
+  GetBookUrlFunctionLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "bookmark-reading-book-url-${AWS::StackName}"
-      Role: !GetAtt LambdaExecutionRole.Arn
+      FunctionName: GetBookUrlFunctionLambda
+      Role: !GetAtt ApiLambdaRole.Arn
       Runtime: python3.12
       Handler: index.handler
       Timeout: 10
@@ -233,14 +219,17 @@ Resources:
       Code:
         ZipFile: |
           import os,json,boto3
-          # Reads book metadata from DDB, then signs S3 GetObject URL.
+          # Fetches book.s3Key then returns a presigned S3 URL (1 hour).
           bb=os.environ["BOOKS_BUCKET"]; bt=os.environ["BOOKS_TABLE"]; ttl=int(os.environ.get("URL_TTL_SECONDS","3600"))
           d=boto3.resource("dynamodb").Table(bt); s3=boto3.client("s3")
+
           def handler(event,context):
             bid=(event.get("pathParameters") or {}).get("bookId")
             if not bid: return {"statusCode":400,"body":"Missing bookId"}
+
             it=(d.get_item(Key={"bookId":bid}).get("Item"))
             if not it or not it.get("s3Key"): return {"statusCode":404,"body":"Book not found"}
+
             url=s3.generate_presigned_url("get_object",Params={"Bucket":bb,"Key":it["s3Key"]},ExpiresIn=ttl)
             return {"statusCode":200,"headers":{"content-type":"application/json"},"body":json.dumps({"url":url,"expiresInSeconds":ttl})}
 
@@ -252,7 +241,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt HealthFunction.Arn
+      IntegrationUri: !GetAtt HealthFunctionLambda.Arn
       PayloadFormatVersion: "2.0"
 
   ProfileIntegration:
@@ -260,7 +249,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt ProfileFunction.Arn
+      IntegrationUri: !GetAtt ProfileFunctionLambda.Arn
       PayloadFormatVersion: "2.0"
 
   ListBooksIntegration:
@@ -268,7 +257,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt ListBooksFunction.Arn
+      IntegrationUri: !GetAtt ListBooksFunctionLambda.Arn
       PayloadFormatVersion: "2.0"
 
   GetBookUrlIntegration:
@@ -276,7 +265,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt GetBookUrlFunction.Arn
+      IntegrationUri: !GetAtt GetBookUrlFunctionLambda.Arn
       PayloadFormatVersion: "2.0"
 
   #########################################################
@@ -327,13 +316,13 @@ Resources:
       Target: !Sub "integrations/${GetBookUrlIntegration}"
 
   #########################################################
-  # Lambda invoke permissions (API -> Lambda)
+  # Invoke permissions (API -> Lambda)
   #########################################################
   HealthInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref HealthFunction
+      FunctionName: !Ref HealthFunctionLambda
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/*"
 
@@ -341,7 +330,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref ProfileFunction
+      FunctionName: !Ref ProfileFunctionLambda
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/*"
 
@@ -349,7 +338,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref ListBooksFunction
+      FunctionName: !Ref ListBooksFunctionLambda
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/*"
 
@@ -357,7 +346,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref GetBookUrlFunction
+      FunctionName: !Ref GetBookUrlFunctionLambda
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/*"
 
