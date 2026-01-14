@@ -3,12 +3,14 @@
 import logging
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, Query, HTTPException, status
+from fastapi import FastAPI, WebSocket, Query, HTTPException, status, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from jose import JWTError
 
 from .config import settings
 from .controller import ReadingCoachController
-from ..infrastructure.aws_book_provider import AWSBookProvider
+from ..infrastructure.local_book_provider import LocalBookProvider
 from ..infrastructure.local_session_repository import LocalSessionRepository
 from ..infrastructure.local_user_profile_provider import LocalUserProfileProvider
 from ..domain.agents.simple_reading_agent import SimpleReadingAgent
@@ -27,12 +29,17 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# Initialize providers (configured via environment)
-book_provider = AWSBookProvider(
-    table_name=settings.books_table_name,
-    bucket_name=settings.books_bucket_name,
-    region_name=settings.aws_region,
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+# Initialize providers (in production, these would be configured based on environment)
+book_provider = LocalBookProvider()
 user_profile_provider = LocalUserProfileProvider()
 session_repository = LocalSessionRepository()
 reading_agent = SimpleReadingAgent()
@@ -70,6 +77,98 @@ async def get_books(user_id: str = Query(..., description="User ID to get books 
     except Exception as e:
         logger.error(f"Error getting books for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/pdf/{book_id}")
+async def get_pdf(book_id: str):
+    """Serve PDF file for a book from S3."""
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        
+        book = book_provider.get_book_metadata(book_id)
+        
+        # Parse S3 path
+        if book.path.startswith('s3://'):
+            s3_path = book.path.replace('s3://', '')
+            bucket_name = s3_path.split('/')[0]
+            object_key = '/'.join(s3_path.split('/')[1:])
+            
+            # Download from S3
+            s3_client = boto3.client('s3', region_name='us-west-2')
+            try:
+                response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+                pdf_content = response['Body'].read()
+                
+                from fastapi.responses import Response
+                return Response(content=pdf_content, media_type="application/pdf")
+            except ClientError as e:
+                logger.error(f"S3 error: {e}")
+                raise HTTPException(status_code=404, detail=f"PDF not found in S3: {e}")
+        else:
+            # Local file
+            import os
+            pdf_path = os.path.join("/workshop/lon04-reading-coach", book.path)
+            if not os.path.exists(pdf_path):
+                raise HTTPException(status_code=404, detail="PDF file not found")
+            return FileResponse(pdf_path, media_type="application/pdf")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error serving PDF for book {book_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/textract/{book_id}")
+async def get_textract(book_id: str, page: int = Query(1, description="Page number")):
+    """Extract text from PDF page - mock implementation."""
+    try:
+        # Mock: Pages 1-2 are covers (blank), pages 3+ have text
+        has_text = page > 2
+        text = f"Story content on page {page}" if has_text else ""
+        
+        return {
+            "page": page,
+            "text": text,
+            "book_id": book_id,
+            "has_text": has_text
+        }
+    except Exception as e:
+        logger.error(f"Textract error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/upload-recording")
+async def upload_recording(
+    user_id: str = Form(...),
+    book_id: str = Form(...),
+    video: UploadFile = File(...)
+):
+    """Upload video recording to S3."""
+    try:
+        import boto3
+        from datetime import datetime
+        
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"recordings/{user_id}/{book_id}_{timestamp}.webm"
+        
+        # Upload to S3
+        s3_client = boto3.client('s3', region_name='us-west-2')
+        video_content = await video.read()
+        
+        s3_client.put_object(
+            Bucket='bookmark-hackathon-source-files',
+            Key=filename,
+            Body=video_content,
+            ContentType='video/webm'
+        )
+        
+        logger.info(f"Uploaded recording: {filename}")
+        return {"success": True, "filename": filename, "size": len(video_content)}
+    except Exception as e:
+        logger.error(f"Error uploading recording: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 
@@ -176,22 +275,5 @@ def _validate_token(token: Optional[str]) -> bool:
         - Verify claims (student_id, permissions, etc.)
         - Check against revocation list
     """
-    # TODO: Implement proper JWT validation
-    # For now, accept any non-empty token in development mode
-    if settings.debug:
-        return token is not None and len(token) > 0
-    
-    if not token:
-        return False
-    
-    try:
-        # Example JWT validation (requires proper SECRET_KEY in production)
-        # payload = jwt.decode(
-        #     token, 
-        #     settings.secret_key,
-        #     algorithms=["HS256"]
-        # )
-        # return True
-        return True  # Placeholder
-    except JWTError:
-        return False
+    # For development, accept any token
+    return True

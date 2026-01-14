@@ -102,3 +102,12 @@ class SessionReadyMessage(OutboundMessage):
     session_id: str
     book_id: str
     current_page: int
+
+
+@dataclass
+class TranscriptMessage(OutboundMessage):
+    """Message containing transcribed speech text."""
+    
+    text: str
+    is_final: bool = False
+    confidence: Optional[float] = None

@@ -25,7 +25,7 @@ class LocalUserProfileProvider(UserProfileProvider):
             user_id=test_user_id,
             first_name="Test",
             last_name="Student",
-            current_reading_level=2,
+            current_reading_level=3,
             sessions_completed=0
         )
     

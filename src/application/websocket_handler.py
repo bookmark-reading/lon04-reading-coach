@@ -15,7 +15,8 @@ from ..domain.entities.messages import (
     ErrorOutMessage,
     NoticeMessage,
     FeedbackMessage,
-    SessionEndedMessage
+    SessionEndedMessage,
+    TranscriptMessage
 )
 from ..domain.services import ReadingService
 
@@ -84,7 +85,13 @@ class WebSocketHandler:
                 
                 case PageChangeMessage():
                     # Send page change instruction as JSON
-                    await websocket.send_text(item.page_change.model_dump_json())
+                    data = {
+                        "type": "page_change",
+                        "page": item.page,
+                        "direction": item.direction,
+                        "page_change": json.loads(item.page_change.model_dump_json())
+                    }
+                    await websocket.send_text(json.dumps(data))
                 
                 case ErrorOutMessage():
                     # Send error message as JSON
@@ -114,6 +121,16 @@ class WebSocketHandler:
                 case SessionEndedMessage():
                     # Send session ended message as JSON
                     data = {"type": "session.ended", **asdict(item)}
+                    await websocket.send_text(json.dumps(data))
+                
+                case TranscriptMessage():
+                    # Send transcript message as JSON
+                    data = {
+                        "type": "transcript",
+                        "text": item.text,
+                        "is_final": item.is_final,
+                        "confidence": item.confidence
+                    }
                     await websocket.send_text(json.dumps(data))
                 
                 case _:

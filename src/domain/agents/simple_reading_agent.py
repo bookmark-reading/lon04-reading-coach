@@ -22,7 +22,7 @@ class SimpleReadingAgent:
     def __init__(self):
         """Initialize the simple reading agent."""
         self._audio_count = 0
-        self._page_turn_threshold = random.randint(8, 15)  # Random threshold per page
+        self._page_turn_threshold = random.randint(50, 80)  # Much higher threshold
     
     async def coach(
         self,
@@ -75,7 +75,7 @@ class SimpleReadingAgent:
                 
                 # Reset counter and set new threshold for next page
                 self._audio_count = 0
-                self._page_turn_threshold = random.randint(8, 15)
+                self._page_turn_threshold = random.randint(50, 80)
                 
                 return PageChangeMessage(
                     page=target_page,
