@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # AWS settings for book provider
+    aws_region: str = "us-west-2"
+    books_table_name: str = "Books"
+    books_bucket_name: str = "bookmark-hackathon-source-files"
+
 
 # Create a singleton instance
 settings = Settings()

@@ -8,7 +8,7 @@ from jose import JWTError
 
 from .config import settings
 from .controller import ReadingCoachController
-from ..infrastructure.local_book_provider import LocalBookProvider
+from ..infrastructure.aws_book_provider import AWSBookProvider
 from ..infrastructure.local_session_repository import LocalSessionRepository
 from ..infrastructure.local_user_profile_provider import LocalUserProfileProvider
 from ..domain.agents.simple_reading_agent import SimpleReadingAgent
@@ -27,8 +27,12 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# Initialize providers (in production, these would be configured based on environment)
-book_provider = LocalBookProvider()
+# Initialize providers (configured via environment)
+book_provider = AWSBookProvider(
+    table_name=settings.books_table_name,
+    bucket_name=settings.books_bucket_name,
+    region_name=settings.aws_region,
+)
 user_profile_provider = LocalUserProfileProvider()
 session_repository = LocalSessionRepository()
 reading_agent = SimpleReadingAgent()
