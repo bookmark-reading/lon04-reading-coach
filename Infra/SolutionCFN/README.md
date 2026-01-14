@@ -310,7 +310,7 @@ Why: Cognito user ≠ DynamoDB profile.
 curl -X PUT "$API/profile" \
  -H "Authorization: Bearer $TOKEN" \
  -H "content-type: application/json" \
- -d '{"firstName":"Kid","lastName":"Test","grade":3}'
+ -d '{"firstName":"Kid","lastName":"Test","grade":"3"}'
 ```
 
 Verify
