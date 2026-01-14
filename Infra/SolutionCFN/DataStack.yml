@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Data stack: Books S3 bucket + DynamoDB tables"
+
+Parameters:
+  BooksBucketNameSuffix:
+    Type: String
+    Description: "S3 bucket name for storing PDF books"
+
+  UserTableName:
+    Type: String
+    Default: "UserProfiles"
+    Description: "User Profiles DynamoDB table name"
+
+  BookTableName:
+    Type: String
+    Default: "Books"
+    Description: "Books DynamoDB table name"
+
+Resources:
+
+  #########################################################
+  # S3 BUCKET - BOOKS STORAGE
+  #########################################################
+
+  BooksBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${BooksBucketNameSuffix}"
+
+      # Block all public access – PDFs are accessed only via backend
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  #########################################################
+  # DYNAMODB - USER PROFILES
+  #########################################################
+
+  UserProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref UserTableName
+
+      # On-demand billing – no capacity planning needed
+      BillingMode: PAY_PER_REQUEST
+
+      # Only declare attributes used for keys/indexes
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+
+      # Main access: lookup by Cognito user id
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+      # Stored per item (no schema needed):
+      # - firstName (string)
+      # - lastName (string)
+      # - grade (number)
+
+  #########################################################
+  # DYNAMODB - BOOK METADATA
+  #########################################################
+
+  BooksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref BookTableName
+
+      # On-demand billing – scales automatically
+      BillingMode: PAY_PER_REQUEST
+
+      # Key + attributes for secondary index
+      AttributeDefinitions:
+        - AttributeName: bookId
+          AttributeType: S
+        - AttributeName: grade
+          AttributeType: N
+        - AttributeName: title
+          AttributeType: S
+
+      # Main access: direct lookup by book id
+      KeySchema:
+        - AttributeName: bookId
+          KeyType: HASH
+
+      # Secondary index – list books by grade (sorted by title)
+      GlobalSecondaryIndexes:
+        - IndexName: GradeIndex
+          KeySchema:
+            - AttributeName: grade
+              KeyType: HASH
+            - AttributeName: title
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  BooksBucketName:
+    Value: !Ref BooksBucket
+    Description: "S3 bucket for PDF books"
+
+  UserProfilesTableName:
+    Value: !Ref UserProfilesTable
+    Description: "DynamoDB table for user profiles"
+
+  BooksTableName:
+    Value: !Ref BooksTable
+    Description: "DynamoDB table for book metadata"

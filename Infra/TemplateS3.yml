@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "S3 bucket for CloudFormation templates (public read)"
+
+Parameters:
+  BucketNameSuffix:
+    Type: String
+    Default: "bookmark-reading-bb-cfn-s3"
+    Description: "Suffix for bucket name. Final name will be <account-id>-<suffix>"
+
+Resources:
+
+  TemplateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${BucketNameSuffix}"
+
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  TemplateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TemplateBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowPublicRead
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "${TemplateBucket.Arn}/*"
+
+Outputs:
+  TemplateBucketName:
+    Value: !Ref TemplateBucket
+    Description: "Public S3 bucket for CloudFormation templates"
+
+  TemplateBucketArn:
+    Value: !GetAtt TemplateBucket.Arn
