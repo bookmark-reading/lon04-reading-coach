@@ -72,7 +72,7 @@ flowchart TB
   end
 
   subgraph Core
-    CORE["CORE_ENGINE (future)\nPDF processing + reading logic"]
+    CORE["CORE_ENGINE (future) PDF processing + reading logic"]
   end
 
   UI -->|Sign in| Cognito
@@ -364,14 +364,6 @@ Lambdas → generate S3 presigned URLs
 
 ---
 
-# Future enhancements
-
-| Gap | Proper solution |
-|------|----------------|
-| Profile auto creation | Cognito PostConfirmation trigger |
-| Book management | Admin API / UI |
-| Teacher sessions | Real‑time session service |
-| Reading analysis | Streaming audio + AI engine |
 
 ---
 
