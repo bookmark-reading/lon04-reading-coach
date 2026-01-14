@@ -22,9 +22,6 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     
-    # Database settings (example)
-    database_url: str = "sqlite:///./reading_coach.db"
-    
     # Logging
     log_level: str = "INFO"
 
