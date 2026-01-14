@@ -151,6 +151,86 @@ You can monitor progress in **CloudFormation → Events**.
 
 ---
 
+# Deployment result
+
+CloudFormation creates:
+
+- Cognito User Pool + Hosted UI
+- API Gateway + Lambda functions
+- DynamoDB tables
+- Books S3 bucket
+
+Deployment is complete when:
+
+```
+Status = CREATE_COMPLETE
+```
+
+You can monitor progress in **CloudFormation → Events**.
+
+---
+
+# How to retrieve and export stack outputs
+
+After deployment, important values (API URL, Cognito IDs, bucket names, etc.) are exposed as **CloudFormation outputs**.
+
+### Quick export (manual)
+
+1. Open **AWS Console → CloudFormation**
+2. Click your **RootStack**
+3. Open the **Outputs** tab
+4. Copy the values you need and export them locally, for example:
+
+```bash
+export API=<ApiBaseUrl>
+export USER_POOL_ID=<UserPoolId>
+export CLIENT_ID=<UserPoolClientId>
+```
+
+RootStack exposes outputs from all nested stacks, so you usually only need this one screen.
+
+---
+
+# How to get outputs (for testing and integration)
+
+After deployment, all required integration values are exposed as **outputs of RootStack**.
+
+### How to retrieve outputs in AWS Console
+
+1. Open **AWS Console**
+2. Navigate to **CloudFormation**
+3. Select your main stack (created from `RootStack.yml`)
+4. Open the **Outputs** tab
+
+You will see a list of key/value pairs. These are the values used for testing, API calls and integrations.
+
+You can copy any value and export it locally, for example:
+
+```bash
+export API_BASE_URL=<ApiBaseUrl>
+export USER_POOL_ID=<UserPoolId>
+export CLIENT_ID=<UserPoolClientId>
+```
+
+RootStack surfaces outputs from all nested stacks, so you only need this one screen.
+
+---
+
+# Output reference
+
+| Output name | What it is | Used for |
+|-------------|------------|----------|
+| ApiBaseUrl | API Gateway base URL | Calling backend endpoints (`/health`, `/profile`, `/books`) |
+| HostedUiBaseUrl | Cognito Hosted UI base URL | User login and OAuth flows (`/login`, `/oauth2/token`) |
+| UserPoolId | Cognito User Pool ID | User management, debugging auth issues |
+| UserPoolClientId | Cognito App Client ID | OAuth `client_id` during token exchange |
+| UserPoolIssuerUrl | JWT issuer URL | Token validation by API Gateway |
+| BooksBucketName | S3 bucket name | Storage location of PDF books |
+| UserProfilesTableName | DynamoDB table name | Stores user attributes (first name, last name, grade) |
+| BooksTableName | DynamoDB table name | Stores book metadata (title, grade, S3 key) |
+
+---
+
 # Notes
 
 - Do not store sensitive data in the template bucket (it is public).
@@ -158,4 +238,5 @@ You can monitor progress in **CloudFormation → Events**.
 - All runtime resources are created by RootStack.
 
 ---
+
 

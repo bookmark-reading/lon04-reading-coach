@@ -135,6 +135,9 @@ Resources:
         UserProfilesTableName: !GetAtt DataStack.Outputs.UserProfilesTableName
 
 Outputs:
+  # ----------------------------
+  # DataStack outputs
+  # ----------------------------
   BooksBucketName:
     Value: !GetAtt DataStack.Outputs.BooksBucketName
 
@@ -144,11 +147,24 @@ Outputs:
   BooksTableName:
     Value: !GetAtt DataStack.Outputs.BooksTableName
 
+  # ----------------------------
+  # AuthStack outputs
+  # ----------------------------
   UserPoolId:
     Value: !GetAtt AuthStack.Outputs.UserPoolId
 
   UserPoolClientId:
     Value: !GetAtt AuthStack.Outputs.UserPoolClientId
 
+  UserPoolIssuerUrl:
+    Value: !GetAtt AuthStack.Outputs.UserPoolIssuerUrl
+
+  HostedUiBaseUrl:
+    Value: !GetAtt AuthStack.Outputs.HostedUiBaseUrl
+
+  # ----------------------------
+  # ApiStack outputs
+  # ----------------------------
   ApiBaseUrl:
     Value: !GetAtt ApiStack.Outputs.ApiBaseUrl
+
