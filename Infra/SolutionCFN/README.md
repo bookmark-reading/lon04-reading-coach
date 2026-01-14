@@ -271,8 +271,12 @@ AbCdEf123456
 
 ## 2. Login and get JWT
 
+Paste the code here:
 ```
-CODE=AbCdEf123456
+CODE=
+```
+Run the below:
+```
 CLIENT_ID=32csubg36n61bg91sp0r4l1idl
 HOST=https://bookmark-reading-bb.auth.us-west-2.amazoncognito.com
 REDIRECT=http://localhost:3000/callback
