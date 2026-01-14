@@ -24,13 +24,27 @@ class LocalBookProvider(BookProvider):
         self._metadata: Dict[str, BookMetadata] = {}
         self._base_path = base_path
         
-        # Pre-populate with test book for e2e testing
+        # Pre-populate with test books
         self._metadata["bathtub-safari"] = BookMetadata(
             book_id="bathtub-safari",
             book_name="Bathtub Safari",
             reading_level=2,
             total_pages=16,
-            path="resources/books/bathtub-safari_en.pdf"
+            path="s3://bookmark-hackathon-source-files/L.2 - Bathtub Safari.pdf"
+        )
+        self._metadata["monkey-business"] = BookMetadata(
+            book_id="monkey-business",
+            book_name="Monkey Business",
+            reading_level=3,
+            total_pages=16,
+            path="s3://bookmark-hackathon-source-files/L.3 - Monkey Business.pdf"
+        )
+        self._metadata["lion-who-wouldnt-try"] = BookMetadata(
+            book_id="lion-who-wouldnt-try",
+            book_name="The Lion who Wouldn't Try",
+            reading_level=3,
+            total_pages=16,
+            path="s3://bookmark-hackathon-source-files/L.3 - The Lion who Wouldn't Try.pdf"
         )
     
     def get_book_metadata(self, book_id: str) -> BookMetadata:
@@ -53,25 +67,30 @@ class LocalBookProvider(BookProvider):
     def get_book(self, book_id: str) -> Book:
         """Retrieve a complete book by book ID.
         
-        Retrieves metadata from the dictionary and reads the file from
-        the local file system.
+        For S3 paths, returns a Book with empty content since the PDF
+        is served directly via the /pdf endpoint.
         
         Args:
             book_id: The unique identifier of the book.
             
         Returns:
-            Book: The complete book entity with metadata and file content.
+            Book: The complete book entity with metadata.
             
         Raises:
             ValueError: If the book metadata is not found.
-            FileNotFoundError: If the book file cannot be accessed.
         """
         metadata = self.get_book_metadata(book_id)
         
-        # Construct the full file path
-        file_path = os.path.join(self._base_path, metadata.path)
+        # For S3 paths, return empty content (PDF served via API endpoint)
+        if metadata.path.startswith('s3://'):
+            return Book(
+                book_id=book_id,
+                file_content=b'',
+                metadata=metadata
+            )
         
-        # Read the file content
+        # For local files, read the content
+        file_path = os.path.join(self._base_path, metadata.path)
         try:
             with open(file_path, "rb") as f:
                 file_content = f.read()
